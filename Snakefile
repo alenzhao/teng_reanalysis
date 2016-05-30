@@ -2,23 +2,35 @@ SAMPLE_NAMES = ['ENCLB037ZZZ', 'ENCLB038ZZZ', 'ENCLB055ZZZ', 'ENCLB056ZZZ']
 
 TRANSCRIPTOME_FA = 'index/gencode.v16.pc_transcripts.fa'
 INDEX = 'index/gencode.v16.pc_transcripts'
-INDEX_LIST = expand(INDEX + '{i}.bt2', i = range(1, 5))
+INDEX_LIST = expand(INDEX + '.{i}.bt2', i = range(1, 5))
 
 UPDATED_PATH = 'PATH=software/bin:$PATH'
 
 BOWTIE = 'software/bin/bowtie2'
 EXPRESS = 'software/bin/express'
 
+BOWTIE_ORIENTATION = ['fr', 'rf', 'ff']
+EXPRESS_ORIENTATION = ['fr', 'rf']
+
 rule all:
     input:
         BOWTIE,
         EXPRESS,
-        INDEX_LIST,
+        # INDEX_LIST,
 
         expand('data/{sample}/r{i}.fastq.gz', sample = SAMPLE_NAMES,
             i = [1, 2]),
 
-        TRANSCRIPTOME_FA
+        expand('alignments/{sample}/{orientation}/bowtie.bam',
+            sample = SAMPLE_NAMES, orientation = ['fr', 'rf', 'ff']),
+
+        expand('results/{sample}/{or_align}/{or_quant}/express/results.xprs',
+            sample = SAMPLE_NAMES, or_align = BOWTIE_ORIENTATION,
+            or_quant = EXPRESS_ORIENTATION),
+
+        expand('results/{sample}/{or_align}/express_default/results.xprs',
+            sample = SAMPLE_NAMES, or_align = BOWTIE_ORIENTATION)
+
 
 rule get_encode_1:
     output:
@@ -72,7 +84,7 @@ rule get_encode_4:
 
 rule get_transcriptome:
     output:
-        '{TRANSCRIPTOME_FA}'
+        TRANSCRIPTOME_FA
     threads: 1
     shell:
         'wget -O {TRANSCRIPTOME_FA}.gz --quiet ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_human/release_16/gencode.v16.pc_transcripts.fa.gz'
@@ -85,8 +97,10 @@ rule build_index:
         BOWTIE,
         TRANSCRIPTOME_FA
     output:
-        expand(INDEX + '{i}.bt2', i = range(1, 5)),
-        expand(INDEX + 'rev.{i}.bt2', i = range(1, 2))
+        # INDEX + '.1.bt2'
+        INDEX_LIST
+        # expand(INDEX + '.{i}.bt2', i = range(1, 5)),
+        # expand(INDEX + '.rev.{i}.bt2', i = range(1, 2))
     shell:
         '{UPDATED_PATH} bowtie2-build'
         ' --seed 42'
@@ -129,3 +143,99 @@ rule get_express:
 ###
 # running the samples
 ###
+
+rule align_fr:
+    input:
+        'data/{sample}/r1.fastq.gz',
+        'data/{sample}/r2.fastq.gz',
+        INDEX_LIST
+    output:
+        'alignments/{sample}/fr/bowtie.bam'
+    threads: 20
+    shell:
+        '{UPDATED_PATH} bowtie2'
+        ' --fr '
+        '--sensitive --dpad 0 --gbar 99999999 --mp 1,1 --np 1 --score-min L,0,-0.1 '
+        '--no-mixed --no-discordant '
+        '--seed 42 '
+        '-k 200 '
+        '-x {INDEX} '
+        '-p {threads} '
+        '-1 {input[0]} '
+        '-2 {input[1]} | '
+        'samtools view -Sb - > {output}'
+
+rule align_rf:
+    input:
+        'data/{sample}/r1.fastq.gz',
+        'data/{sample}/r2.fastq.gz',
+        INDEX_LIST
+    output:
+        'alignments/{sample}/rf/bowtie.bam'
+    threads: 20
+    shell:
+        '{UPDATED_PATH} bowtie2'
+        ' --rf '
+        '--sensitive --dpad 0 --gbar 99999999 --mp 1,1 --np 1 --score-min L,0,-0.1 '
+        '--no-mixed --no-discordant '
+        '--seed 42 '
+        '-k 200 '
+        '-x {INDEX} '
+        '-p {threads} '
+        '-1 {input[0]} '
+        '-2 {input[1]} | '
+        'samtools view -Sb - > {output}'
+
+rule align_ff:
+    input:
+        'data/{sample}/r1.fastq.gz',
+        'data/{sample}/r2.fastq.gz',
+        INDEX_LIST
+    output:
+        'alignments/{sample}/ff/bowtie.bam'
+    threads: 20
+    shell:
+        '{UPDATED_PATH} bowtie2'
+        ' --ff '
+        '--sensitive --dpad 0 --gbar 99999999 --mp 1,1 --np 1 --score-min L,0,-0.1 '
+        '--no-mixed --no-discordant '
+        '--seed 42 '
+        '-k 200 '
+        '-x {INDEX} '
+        '-p {threads} '
+        '-1 {input[0]} '
+        '-2 {input[1]} | '
+        'samtools view -Sb - > {output}'
+
+rule express_stranded:
+    input:
+        'alignments/{sample}/{or_align}/bowtie.bam'
+    output:
+        'results/{sample}/{or_align}/{or_quant}/express/results.xprs'
+    benchmark: 'logs/{sample}/express/{or_align}/{or_quant}/benchmark.log'
+    log: 'logs/{sample}/express/{or_align}/{or_quant}/run.log'
+    threads: 2
+    params:
+        out = 'results/{sample}/{or_align}/{or_quant}/express'
+    shell:
+        '{UPDATED_PATH} express'
+        ' --{wildcards.or_quant}-stranded'
+        ' -o {params.out}'
+        ' {TRANSCRIPTOME_FA}'
+        ' {input}'
+
+rule express_default:
+    input:
+        'alignments/{sample}/{or_align}/bowtie.bam'
+    output:
+        'results/{sample}/{or_align}/express_default/results.xprs'
+    benchmark: 'logs/{sample}/express_default/{or_align}/benchmark.log'
+    log: 'logs/{sample}/express_default/{or_align}/run.log'
+    threads: 2
+    params:
+        out = 'results/{sample}/{or_align}/express_default'
+    shell:
+        '{UPDATED_PATH} express'
+        ' -o {params.out}'
+        ' {TRANSCRIPTOME_FA}'
+        ' {input}'
