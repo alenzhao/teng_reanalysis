@@ -24,12 +24,22 @@ rule all:
         expand('alignments/{sample}/{orientation}/bowtie.bam',
             sample = SAMPLE_NAMES, orientation = ['fr', 'rf', 'ff']),
 
+        # use EXPRESS_ORIENTATION because BOWTIE_ORIENTATION (ff)
+        # produces an error since there are no reads
         expand('results/{sample}/{or_align}/{or_quant}/express/results.xprs',
-            sample = SAMPLE_NAMES, or_align = BOWTIE_ORIENTATION,
+            sample = SAMPLE_NAMES, or_align = EXPRESS_ORIENTATION,
             or_quant = EXPRESS_ORIENTATION),
 
         expand('results/{sample}/{or_align}/express_default/results.xprs',
-            sample = SAMPLE_NAMES, or_align = BOWTIE_ORIENTATION)
+            sample = SAMPLE_NAMES, or_align = EXPRESS_ORIENTATION),
+
+        expand('results/{sample}/paper/express/results.xprs',
+            sample = SAMPLE_NAMES),
+        expand('results/{sample}/paper_forward/express/results.xprs',
+            sample = SAMPLE_NAMES),
+        expand('results/{sample}/paper_reverse/express/results.xprs',
+            sample = SAMPLE_NAMES)
+
 
 
 rule get_encode_1:
@@ -144,6 +154,25 @@ rule get_express:
 # running the samples
 ###
 
+rule align_paper:
+    input:
+        'data/{sample}/r1.fastq.gz',
+        'data/{sample}/r2.fastq.gz',
+        INDEX_LIST
+    output:
+        'alignments/{sample}/paper/bowtie.bam'
+    benchmark: 'logs/{sample}/bowtie/paper/benchmark.log'
+    log: 'logs/{sample}/bowtie/paper/run.log'
+    threads: 20
+    shell:
+        '{UPDATED_PATH} bowtie2'
+        ' -a'
+        ' -x {INDEX}'
+        ' -p {threads}'
+        ' -1 {input[0]} '
+        ' -2 {input[1]} | '
+        'samtools view -Sb - > {output}'
+
 rule align_fr:
     input:
         'data/{sample}/r1.fastq.gz',
@@ -236,6 +265,56 @@ rule express_default:
         out = 'results/{sample}/{or_align}/express_default'
     shell:
         '{UPDATED_PATH} express'
+        ' -o {params.out}'
+        ' {TRANSCRIPTOME_FA}'
+        ' {input}'
+
+rule express_paper:
+    input:
+        'alignments/{sample}/paper/bowtie.bam'
+    output:
+        'results/{sample}/paper/express/results.xprs'
+    benchmark: 'logs/{sample}/express/paper/benchmark.log'
+    log: 'logs/{sample}/express/paper/run.log'
+    threads: 2
+    params:
+        out = 'results/{sample}/paper/express'
+    shell:
+        '{UPDATED_PATH} express'
+        ' -o {params.out}'
+        ' {TRANSCRIPTOME_FA}'
+        ' {input}'
+
+rule express_paper_reverse:
+    input:
+        'alignments/{sample}/paper/bowtie.bam'
+    output:
+        'results/{sample}/paper_reverse/express/results.xprs'
+    benchmark: 'logs/{sample}/express/paper_reverse/benchmark.log'
+    log: 'logs/{sample}/express/paper_reverse/run.log'
+    threads: 2
+    params:
+        out = 'results/{sample}/paper_reverse/express'
+    shell:
+        '{UPDATED_PATH} express'
+        ' --rf-stranded'
+        ' -o {params.out}'
+        ' {TRANSCRIPTOME_FA}'
+        ' {input}'
+
+rule express_paper_forward:
+    input:
+        'alignments/{sample}/paper/bowtie.bam'
+    output:
+        'results/{sample}/paper_forward/express/results.xprs'
+    benchmark: 'logs/{sample}/express/paper_forward/benchmark.log'
+    log: 'logs/{sample}/express/paper_forward/run.log'
+    threads: 2
+    params:
+        out = 'results/{sample}/paper_forward/express'
+    shell:
+        '{UPDATED_PATH} express'
+        ' --fr-stranded'
         ' -o {params.out}'
         ' {TRANSCRIPTOME_FA}'
         ' {input}'
