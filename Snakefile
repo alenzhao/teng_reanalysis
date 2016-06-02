@@ -41,7 +41,6 @@ rule all:
             sample = SAMPLE_NAMES)
 
 
-
 rule get_encode_1:
     output:
         'data/ENCLB037ZZZ/r1.fastq.gz',

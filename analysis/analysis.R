@@ -51,8 +51,10 @@ fasta_ordering <- system("grep '>' ../index/gencode.v16.pc_transcripts.fa | sed 
 reverse_tpm <- load_all_samples('reverse', 'tpm')
 reverse_tpm <- reverse_tpm[fasta_ordering, ]
 
+# this is what was submitted to http://rafalab.rc.fas.harvard.edu/rnaseqbenchmark
 write.table(reverse_tpm, file = '../results/reverse_merged.tpm',
   quote = FALSE, sep = '\t', row.names = FALSE, col.names = TRUE)
+
 
 forward_tpm <- load_all_samples('forward', 'tpm')
 
@@ -69,14 +71,18 @@ plot_grid(forward_plot, reverse_plot)
 reverse_counts <- load_all_samples('reverse', 'est_counts')
 forward_counts <- load_all_samples('forward', 'est_counts')
 
+# NOTE: very few reads map if you do not specify the correct strand (1.4-1.8M versus 60-75M reads)
+
 sapply(forward_counts, sum)
 sapply(reverse_counts, sum)
 
 
-
 ###
-# temporary -- remove soon
+# figuring out what unit they are using
 ###
 
 tmp <- read.table('http://rafalab.rc.fas.harvard.edu/rnaseqcomp/encodeexample.txt',
   header = TRUE)
+
+# appears to be tpm
+sapply(tmp, sum)
