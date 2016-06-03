@@ -1,3 +1,5 @@
+from os.path import expanduser, splitext
+
 SAMPLE_NAMES = ['ENCLB037ZZZ', 'ENCLB038ZZZ', 'ENCLB055ZZZ', 'ENCLB056ZZZ']
 
 TRANSCRIPTOME_FA = 'index/gencode.v16.pc_transcripts.fa'
@@ -9,6 +11,11 @@ UPDATED_PATH = 'PATH=software/bin:$PATH'
 BOWTIE = 'software/bin/bowtie2'
 EXPRESS = 'software/bin/express'
 
+def source_rmd(base, file_name, output_name = None):
+    if output_name is None:
+        output_name = splitext(file_name)[0]
+        output_name += '.html'
+    return 'Rscript --vanilla --default-packages=methods,stats,utils,knitr -e \'setwd("{0}")\' -e \'rmarkdown::render("{1}", output_file = "{2}")\''.format(base, file_name, output_name)
 
 rule all:
     input:
@@ -20,7 +27,9 @@ rule all:
             i = [1, 2]),
 
         expand('results/{sample}/paper_reverse/express/results.xprs',
-            sample = SAMPLE_NAMES)
+            sample = SAMPLE_NAMES),
+
+        'analysis/analysis.html'
 
 
 rule get_encode_1:
@@ -187,3 +196,14 @@ rule express_paper_forward:
         ' -o {params.out}'
         ' {TRANSCRIPTOME_FA}'
         ' {input}'
+
+rule generate_results:
+    input:
+        expand('results/{sample}/paper_reverse/express/results.xprs',
+            sample = SAMPLE_NAMES),
+        expand('results/{sample}/paper_forward/express/results.xprs',
+            sample = SAMPLE_NAMES)
+    output:
+        'analysis/analysis.html'
+    shell:
+        source_rmd('analysis', 'analysis.Rmd')

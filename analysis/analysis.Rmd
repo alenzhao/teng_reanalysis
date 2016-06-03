@@ -1,0 +1,186 @@
+---
+  title: "Reanalysis of Teng et. al."
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+# preliminaries
+
+Let's load some packages
+
+```{r}
+suppressPackageStartupMessages({
+library('data.table')
+library('dplyr')
+library('ggplot2')
+library('cowplot')
+})
+```
+
+Some functions that we will find helpful:
+
+This function loads eXpress results with all parameters (default, `--fr-stranded`, `--rf-stranded`),
+given a sample and the column in the quantification file.
+
+```{r}
+load_column <- function(sample_name, column_name) {
+  results_path <- file.path(base_dir, 'results', sample_name,
+    c('paper', 'paper_forward', 'paper_reverse'),
+    'express', 'results.xprs')
+  res <- lapply(results_path, read.table, header = TRUE, stringsAsFactors = FALSE)
+  res <- lapply(res, function(x) x[, c('target_id', column_name)])
+  res <- Map(function(df, new_name) {
+    data.table::setnames(df, column_name, new_name)
+    df
+  }, res, paste0(c('default', 'forward', 'reverse'), '_', column_name))
+
+  Reduce(function(x, y) dplyr::inner_join(x, y, by = 'target_id'), res)
+}
+```
+
+This function loads a specific type of eXpress results across all samples:
+
+```{r}
+load_all_samples <- function(which_mode, column_name) {
+  which_path <- switch(which_mode,
+    default = 'paper',
+    forward = 'paper_forward',
+    reverse = 'paper_reverse')
+
+  sample_names <- c('ENCLB037ZZZ', 'ENCLB038ZZZ', 'ENCLB055ZZZ', 'ENCLB056ZZZ')
+  results_path <- file.path(base_dir, 'results', sample_names, which_path,
+    'express', 'results.xprs')
+
+  res <- lapply(results_path, read.table, header = TRUE, stringsAsFactors = FALSE)
+  res <- lapply(res, function(x) x[, c('target_id', column_name)])
+  res <- Map(function(df, new_name) {
+    data.table::setnames(df, column_name, new_name)
+    df
+  }, res, sample_names)
+
+  res <- Reduce(function(x, y) dplyr::inner_join(x, y, by = 'target_id'), res)
+  res <- as.data.frame(res)
+  rownames(res) <- res$target_id
+  res$target_id <- NULL
+
+  res
+}
+```
+
+# comparison of forward and reverse
+
+## looking at the first data set
+
+```{r}
+base_dir <- '..'
+current_sample <- 'ENCLB037ZZZ'
+current_sample_tpm <- load_column(current_sample, 'tpm')
+```
+
+Let's look at running the forward and reverse version on the first data set:
+
+```{r}
+with(current_sample_tpm, cor(forward_tpm, reverse_tpm))
+```
+
+The plot doesn't look so great either:
+
+```{r}
+ggplot(current_sample_tpm, aes(log(forward_tpm + 1), log(reverse_tpm + 1))) +
+  geom_point(alpha = 0.4)
+```
+
+## comparing the first two replicates to each other
+
+**Note**: Here we will be comparing TPMs.
+It is not necessarily completely correct since the distribution is probably slightly different, but since they are replicates it should be more or less okay.
+
+First let's look at how many reads mapped:
+
+```{r}
+reverse_counts <- load_all_samples('reverse', 'est_counts')
+forward_counts <- load_all_samples('forward', 'est_counts')
+```
+
+very few reads map if you do not specify the correct strand (1.4-1.8M versus 60-75M reads)
+
+```{r}
+sapply(forward_counts, sum)
+sapply(reverse_counts, sum)
+```
+
+Let's get the ordering in the original FASTA:
+
+```{r}
+fasta_ordering <- system("grep '>' ../index/gencode.v16.pc_transcripts.fa | sed 's/^>//g'",
+  intern = TRUE)
+```
+
+```{r}
+reverse_tpm <- load_all_samples('reverse', 'tpm')
+reverse_tpm <- reverse_tpm[fasta_ordering, ]
+forward_tpm <- load_all_samples('forward', 'tpm')
+forward_tpm <- forward_tpm[fasta_ordering, ]
+```
+
+```{r}
+forward_plot <- ggplot(forward_tpm, aes(log(ENCLB037ZZZ + 1), log(ENCLB038ZZZ + 1))) +
+  geom_point(alpha = 0.4) +
+  ggtitle('running express with forward strand')
+
+reverse_plot <- ggplot(reverse_tpm, aes(log(ENCLB037ZZZ + 1), log(ENCLB038ZZZ + 1))) +
+  geom_point(alpha = 0.4) +
+  ggtitle('running express with reverse strand')
+```
+
+Notice the correlation is not so great using the forward strand:
+
+```{r}
+forward_plot
+```
+
+It improves greatly if you use the reverse strand:
+
+```{r}
+reverse_plot
+```
+
+Correlations:
+
+```{r}
+with(forward_tpm, cor(ENCLB037ZZZ, ENCLB038ZZZ))
+with(forward_tpm, cor(ENCLB037ZZZ, ENCLB038ZZZ, method = 'spearman'))
+with(reverse_tpm, cor(ENCLB037ZZZ, ENCLB038ZZZ))
+with(reverse_tpm, cor(ENCLB037ZZZ, ENCLB038ZZZ, method = 'spearman'))
+```
+
+# Prepare for submission:
+
+It is unclear what the unit is on the website.
+Let's figure it out:
+
+```{r}
+tmp <- read.table('http://rafalab.rc.fas.harvard.edu/rnaseqcomp/encodeexample.txt',
+  header = TRUE)
+```
+
+It appears to be TPM:
+
+```{r}
+sapply(tmp, sum)
+```
+
+Write the reverse results out for submission to http://rafalab.rc.fas.harvard.edu/rnaseqbenchmark:
+
+```{r}
+write.table(reverse_tpm, file = '../results/reverse_merged.tpm',
+  quote = FALSE, sep = '\t', row.names = FALSE, col.names = TRUE)
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```
